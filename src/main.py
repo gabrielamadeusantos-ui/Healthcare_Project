@@ -4,9 +4,6 @@ import os
 from datetime import datetime
 import logging
 
-# (Optional) If you need to add src to sys.path, uncomment the line below.
-# sys.path.append(os.path.dirname(__file__))
-
 # Import our own modules – using relative imports since they're in the same package
 from .config import SOURCE_FOLDER_ID, DESTINATION_FOLDER_ID, SUFFIX
 from .utils import authenticate, list_files
