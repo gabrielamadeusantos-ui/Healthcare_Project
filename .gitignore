@@ -4,3 +4,4 @@ service-account-key.json
 .env
 data/
 media/
+PowerBI_Connection.txt
