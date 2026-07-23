@@ -135,5 +135,5 @@ Future improvements could include:
 
 ## 📂 Project Files
 
-* [Python ETL scripts.](./scripts)
-* [Power BI (.pbix) file and dashboard.](./dashboard)
+* [Python ETL scripts.](./src)
+* [Dashboard file.](./reports)
