@@ -1,4 +1,5 @@
 @echo off
-cd /d "%~dp0"
+set SCRIPT_DIR=%~dp0
+cd /d "%SCRIPT_DIR%.."
 python -m src.main
 pause

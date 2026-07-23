@@ -1,11 +1,12 @@
 @echo off
-cd /d "%~dp0"
+:: Change to the project root directory (one level above the folder containing this .bat)
+cd /d "%~dp0.."
 
-:: Create an file with the answser "n" (can be changed to "y" if it needed to force it)
+:: Create a temporary file with the answer "n" (change to "y" if you want to force reprocessing)
 echo n > answer.txt
 
-:: execute the script
+:: Execute the ETL pipeline – now the 'src' module can be found because we are in the root
 python -m src.main < answer.txt
 
-:: Removes the temp file
+:: Remove the temporary answer file
 del answer.txt
