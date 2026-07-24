@@ -69,16 +69,16 @@ However, due to limitations in executing local Python scripts, I implemented the
 * Reliable execution
 * Local environment control
 * Easy scheduling and triggering
-
-<img width="783" height="493" alt="image" src="https://github.com/user-attachments/assets/58ee74b6-2078-4968-b635-5ee6e5641c59" />
+  
+<img width="1805" height="595" alt="image" src="https://github.com/user-attachments/assets/8827b024-6846-4563-a15c-63844ec6fb02" />
 
 ## 📊 Data Visualization (Power BI)
 
 Power BI dashboards were designed with a strong focus on business decision-making.
 
-<img width="1341" height="770" alt="image" src="https://github.com/user-attachments/assets/8bde740a-2c7f-4c81-bf06-68a0ff73edea" />
+<img width="1341" height="770" alt="Dashboard pic 1" src="https://github.com/user-attachments/assets/37e2c53f-170e-428a-8ddd-37b53f1233f3" />
 
-<img width="1341" height="750" alt="image" src="https://github.com/user-attachments/assets/bebcf0a4-0700-4bf7-b1ec-7824a55e827e" />
+<img width="1341" height="750" alt="Dashboard pic 2" src="https://github.com/user-attachments/assets/678950c4-4d14-43c9-8777-0bdf45ab53b5" />
 
 ### Key Analysis Areas:
 
@@ -113,8 +113,7 @@ This project demonstrates:
 
 Ultimately, it bridges the gap between raw data and business insights, showcasing both **data engineering and data analytics capabilities**.
 
-https://github.com/user-attachments/assets/55a084b5-fb3a-4044-8169-b6d29c09599f
-
+https://github.com/user-attachments/assets/25f0e9e5-6e16-4f6b-8452-b34048d742c6
 
 ## 🚀 Tech Stack
 
