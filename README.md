@@ -5,7 +5,7 @@ This project was designed to simulate a real-world healthcare analytics environm
 
 The main objective was to transform raw, consolidated datasets into a structured analytical model capable of generating actionable insights.
 
-<img width="1255" height="703" alt="image" src="https://github.com/user-attachments/assets/a58efe7e-df97-45cd-8578-66f067045dcc" />
+<img width="1341" height="770" alt="Dashboard pic 1" src="https://github.com/user-attachments/assets/e37c81a4-470a-4425-bbfe-cdbc846c78b9" />
 
 ## 🛠️ Data Source & Challenge
 
