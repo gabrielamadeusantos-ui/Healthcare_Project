@@ -137,3 +137,10 @@ Future improvements could include:
 
 * [Python ETL scripts.](./src)
 * [Dashboard file.](./reports)
+
+---
+
+## 👨‍💻 Author
+
+Gabriel Amadeu Santos
+Aspiring Data Engineer | Background in Audit & Analytics
