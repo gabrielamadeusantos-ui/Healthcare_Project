@@ -1,12 +1,12 @@
 @echo off
-:: Change to the project root directory (one level above the folder containing this .bat)
+:: 1. Vai para a RAIZ do projeto (sobe 1 nível de "bat_files" para "Healthcare_Project")
 cd /d "%~dp0.."
 
-:: Create a temporary file with the answer "n" (change to "y" if you want to force reprocessing)
-echo n > answer.txt
+:: 2. (Opcional) Exibe onde estamos para confirmar
+echo Executando na pasta: %cd%
 
-:: Execute the ETL pipeline – now the 'src' module can be found because we are in the root
-python -m src.main < answer.txt
+:: 3. Executa o ETL passando "n" automaticamente (sem criar arquivos temporários)
+echo n | python -m src.main
 
-:: Remove the temporary answer file
-del answer.txt
+:: 4. Se quiser pausar para ver o resultado ao dar duplo clique, descomente a linha abaixo:
+:: pause
