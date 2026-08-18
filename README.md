@@ -142,4 +142,4 @@ Future improvements could include:
 ## 👨‍💻 Author
 
 Gabriel Amadeu Santos
-Aspiring Data Engineer | Background in Audit & Analytics
+Data Analyst
