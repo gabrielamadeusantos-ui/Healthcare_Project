@@ -76,9 +76,9 @@ However, due to limitations in executing local Python scripts, I implemented the
 
 Power BI dashboards were designed with a strong focus on business decision-making.
 
-<img width="1341" height="770" alt="Dashboard pic 1" src="https://github.com/user-attachments/assets/37e2c53f-170e-428a-8ddd-37b53f1233f3" />
+<img width="1503" height="846" alt="image" src="https://github.com/user-attachments/assets/6d5fa32c-60b4-44d0-82df-6960ce59077f" />
 
-<img width="1341" height="750" alt="Dashboard pic 2" src="https://github.com/user-attachments/assets/678950c4-4d14-43c9-8777-0bdf45ab53b5" />
+<img width="1502" height="846" alt="image" src="https://github.com/user-attachments/assets/ec9f302b-92dc-45f4-923d-4022af1fd691" />
 
 ### Key Analysis Areas:
 
