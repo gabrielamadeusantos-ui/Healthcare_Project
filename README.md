@@ -113,7 +113,7 @@ This project demonstrates:
 
 Ultimately, it bridges the gap between raw data and business insights, showcasing both **data engineering and data analytics capabilities**.
 
-https://github.com/user-attachments/assets/25f0e9e5-6e16-4f6b-8452-b34048d742c6
+https://github.com/user-attachments/assets/6608612f-80e8-4f5c-95d2-a6e685c49318
 
 ## 🚀 Tech Stack
 
