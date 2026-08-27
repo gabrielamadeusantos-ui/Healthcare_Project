@@ -2,6 +2,7 @@
 from googleapiclient.http import MediaIoBaseUpload
 import mimetypes
 import re
+from datetime import datetime  # <-- ADICIONADO
 
 def sanitize_filename(name: str) -> str:
     """
@@ -15,6 +16,8 @@ def load_file(service, buffer, file_name, destination_folder_id, destination_fil
     Upload (or update) a file to Google Drive.
     If a file with the same name already exists in the destination folder,
     we update it instead of creating a duplicate – that way we avoid clutter.
+    The `destination_files` dictionary is updated in-place to reflect the new/updated file,
+    so subsequent calls see the most up-to-date state.
     """
     
     file_name = sanitize_filename(file_name)
@@ -38,11 +41,21 @@ def load_file(service, buffer, file_name, destination_folder_id, destination_fil
             media_body=media,
             supportsAllDrives=True  # needed if we're working with shared drives
         ).execute()
+        # Update the modifiedTime in our local dictionary to reflect the new version
+        # (The API does not return the new modifiedTime in the update response, so we set it to now)
+        destination_files[file_name]['modifiedTime'] = datetime.now().isoformat() + 'Z'
     else:
         # Otherwise, create a new file in the destination folder
         body = {'name': file_name, 'parents': [destination_folder_id]}
-        service.files().create(
+        result = service.files().create(
             body=body, 
             media_body=media,
-            supportsAllDrives=True
+            supportsAllDrives=True,
+            fields='id, mimeType, modifiedTime'  # request these fields back
         ).execute()
+        # Add the new file's metadata to the dictionary so future updates find it
+        destination_files[file_name] = {
+            'id': result['id'],
+            'mimeType': result.get('mimeType', 'application/octet-stream'),
+            'modifiedTime': result.get('modifiedTime', datetime.now().isoformat() + 'Z')
+        }

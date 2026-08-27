@@ -1,0 +1,546 @@
+utils.py
+
+# src/utils.py
+import os
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+
+# Import the credential paths defined in config
+from .config import CREDENTIALS_PATH, TOKEN_PATH
+
+SCOPES = ['https://www.googleapis.com/auth/drive']
+
+def authenticate():
+    """
+    Handle OAuth2 authentication for Google Drive.
+    It looks for a stored token (token.json) – if valid, use it.
+    If expired, refresh it (if a refresh token is available).
+    Otherwise, launch a local server to get new authorization.
+    Finally, save the new token for next time.
+    """
+    creds = None
+    if os.path.exists(TOKEN_PATH):
+        creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+    
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
+            creds = flow.run_local_server(port=0)
+        
+        # Write the updated credentials back to the token file
+        with open(TOKEN_PATH, 'w') as token:
+            token.write(creds.to_json())
+    
+    return build('drive', 'v3', credentials=creds)
+
+def list_files(service, folder_id):
+    """
+    Retrieve all non-trashed files inside a given Google Drive folder.
+    Returns a dictionary mapping file names to their full metadata (id, mimeType, modifiedTime).
+    Handles pagination in case the folder contains many files.
+    """
+    files_dict = {}
+    query = f"'{folder_id}' in parents and trashed=false"
+    page_token = None
+    
+    while True:
+        response = service.files().list(
+            q=query, 
+            fields="nextPageToken, files(id, name, mimeType, modifiedTime)",
+            pageToken=page_token
+        ).execute()
+        
+        for f in response.get('files', []):
+            files_dict[f['name']] = f
+            
+        page_token = response.get('nextPageToken', None)
+        if page_token is None:
+            break
+            
+    return files_dict
+
+
+
+________________________________________
+
+
+main.py
+
+
+# src/main.py
+import sys
+import os
+from datetime import datetime
+import logging
+
+# Import our own modules – using relative imports since they're in the same package
+from .config import SOURCE_FOLDER_ID, DESTINATION_FOLDER_ID, SUFFIX
+from .utils import authenticate, list_files
+from .extract import extract_file
+from .transform import transform_data
+from .load import load_file
+
+# Set up logging – cleaner than print statements and we can adjust verbosity later
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# ==========================================
+# VISUAL INTERFACE (kept for compatibility)
+# ==========================================
+class Colors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    GREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    BOLD = '\033[1m'
+    END = '\033[0m'
+
+def print_title(text):
+    """Print a fancy title with a border – makes the console output more readable."""
+    print(f"\n{Colors.HEADER}{Colors.BOLD}{'='*50}\n{text.center(50)}\n{'='*50}{Colors.END}")
+
+# ==========================================
+# ETL ORCHESTRATOR
+# ==========================================
+def run_pipeline():
+    """
+    Main orchestration function:
+      1. Authenticate with Google Drive.
+      2. List all files in the source and destination folders.
+      3. For each file in the source, decide whether to process it based on:
+         - whether it already exists in dest,
+         - its modification timestamp,
+         - or a manual 'force' flag.
+      4. Extract, transform, and load (update or create) each file.
+    """
+    service = authenticate()
+    print_title("ETL SYSTEM - MONTHLY SYNCHRONIZATION")
+
+    # Ask the user if they want to ignore timestamps and reprocess everything
+    print(f"{Colors.BOLD}Execution Configuration:{Colors.END}")
+    answer = input(f"{Colors.BLUE}👉 Force reprocessing of ALL files? (y/n): {Colors.END}").strip().lower()
+    force_reprocess = (answer == 'y')
+    print("-" * 50)
+
+    print("🔍 Analyzing files in the cloud...")
+    source_files = list_files(service, SOURCE_FOLDER_ID)
+    destination_files = list_files(service, DESTINATION_FOLDER_ID)
+
+    if not source_files:
+        print(f"{Colors.WARNING}No files found in the source folder.{Colors.END}")
+        return
+
+    # Loop through each file in the source
+    for original_name, source_info in source_files.items():
+        base_name, extension = os.path.splitext(original_name)
+        processed_name = f"{base_name}{SUFFIX}{extension}"
+
+        dt_source = datetime.fromisoformat(source_info['modifiedTime'].replace('Z', '+00:00')).timestamp()
+        
+        process_file = False
+        status_msg = ""
+
+        # Decide whether we need to process this file
+        if processed_name in destination_files:
+            dt_dest = datetime.fromisoformat(destination_files[processed_name]['modifiedTime'].replace('Z', '+00:00')).timestamp()
+            
+            if force_reprocess:
+                status_msg = f"{Colors.WARNING}⚠️ Forced Reprocessing{Colors.END}"
+                process_file = True
+            elif dt_source > dt_dest:
+                status_msg = f"{Colors.BLUE}🔄 Update detected (New source){Colors.END}"
+                process_file = True
+            else:
+                status_msg = f"{Colors.WARNING}⏭️  Already processed previously{Colors.END}"
+        else:
+            status_msg = f"{Colors.GREEN}✨ New file identified{Colors.END}"
+            process_file = True
+
+        print(f"[{original_name}] -> {status_msg}")
+
+        # Execute the full ETL if needed
+        if process_file:
+            try:
+                print(f"   🛠️  Processing: {processed_name}...", end="\r")
+                
+                raw_buffer = extract_file(service, source_info)
+                processed_buffer = transform_data(raw_buffer, original_name)
+                load_file(service, processed_buffer, processed_name, DESTINATION_FOLDER_ID, destination_files)
+                
+                print(f"   ✅ {Colors.GREEN}Finished: {processed_name}           {Colors.END}")
+            except Exception as e:
+                # Catch any error so the pipeline continues with the next file
+                print(f"   ❌ {Colors.FAIL}Critical Error: {str(e)}{Colors.END}")
+
+if __name__ == '__main__':
+    run_pipeline()
+    print_title("PROCESS FINISHED")
+
+
+
+
+
+__________________________________________
+
+
+load.py
+
+
+# src/utils.py
+import os
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+
+# Import the credential paths defined in config
+from .config import CREDENTIALS_PATH, TOKEN_PATH
+
+SCOPES = ['https://www.googleapis.com/auth/drive']
+
+def authenticate():
+    """
+    Handle OAuth2 authentication for Google Drive.
+    It looks for a stored token (token.json) – if valid, use it.
+    If expired, refresh it (if a refresh token is available).
+    Otherwise, launch a local server to get new authorization.
+    Finally, save the new token for next time.
+    """
+    creds = None
+    if os.path.exists(TOKEN_PATH):
+        creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+    
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
+            creds = flow.run_local_server(port=0)
+        
+        # Write the updated credentials back to the token file
+        with open(TOKEN_PATH, 'w') as token:
+            token.write(creds.to_json())
+    
+    return build('drive', 'v3', credentials=creds)
+
+def list_files(service, folder_id):
+    """
+    Retrieve all non-trashed files inside a given Google Drive folder.
+    Returns a dictionary mapping file names to their full metadata (id, mimeType, modifiedTime).
+    Handles pagination in case the folder contains many files.
+    """
+    files_dict = {}
+    query = f"'{folder_id}' in parents and trashed=false"
+    page_token = None
+    
+    while True:
+        response = service.files().list(
+            q=query, 
+            fields="nextPageToken, files(id, name, mimeType, modifiedTime)",
+            pageToken=page_token
+        ).execute()
+        
+        for f in response.get('files', []):
+            files_dict[f['name']] = f
+            
+        page_token = response.get('nextPageToken', None)
+        if page_token is None:
+            break
+            
+    return files_dict
+
+
+
+
+
+
+__________________________________________________
+
+
+config.py
+
+
+# src/config.py
+import os
+from dotenv import load_dotenv
+
+# Determine the project root (one level above 'src')
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Load environment variables from the .env file at the root
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, '.env'))
+
+# Google Drive folder IDs – these must be set in .env
+SOURCE_FOLDER_ID = os.getenv('SOURCE_FOLDER_ID')
+DESTINATION_FOLDER_ID = os.getenv('DESTINATION_FOLDER_ID')
+SUFFIX = os.getenv('SUFFIX', '_PROCESSED')
+
+# Paths for OAuth credentials – can be relative to the root
+CREDENTIALS_PATH = os.getenv('CREDENTIALS_PATH', 'credentials.json')
+TOKEN_PATH = os.getenv('TOKEN_PATH', 'token.json')
+
+# Convert to absolute paths so we don't depend on the current working directory
+CREDENTIALS_PATH = os.path.join(BASE_DIR, CREDENTIALS_PATH)
+TOKEN_PATH = os.path.join(BASE_DIR, TOKEN_PATH)
+
+# Quick sanity check – better to fail early if these are missing
+if not SOURCE_FOLDER_ID or not DESTINATION_FOLDER_ID:
+    raise EnvironmentError(
+        "SOURCE_FOLDER_ID and DESTINATION_FOLDER_ID must be defined in .env"
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+__________________________________
+
+extract.py
+
+
+# src/extract.py
+import io
+from googleapiclient.http import MediaIoBaseDownload
+
+# Mapping for Google Workspace native files to standard formats
+# This lets us download them as real .xlsx or .docx files
+EXPORT_MAP = {
+    'application/vnd.google-apps.spreadsheet': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.google-apps.document': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+}
+
+def extract_file(service, file_info):
+    """
+    Download a file from Google Drive into an in-memory buffer.
+    If the file is a Google Docs/Sheets native type, we export it to a standard format.
+    Returns a BytesIO object ready to be read.
+    """
+    file_id = file_info['id']
+    mime = file_info['mimeType']
+    buffer = io.BytesIO()
+    
+    # Choose the appropriate download method: export for native, regular for others
+    if mime in EXPORT_MAP:
+        req = service.files().export_media(fileId=file_id, mimeType=EXPORT_MAP[mime])
+    else:
+        req = service.files().get_media(fileId=file_id)
+        
+    downloader = MediaIoBaseDownload(buffer, req)
+    
+    # Download in chunks (handles large files gracefully)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    
+    # Rewind the buffer so the caller can read from the beginning
+    buffer.seek(0)
+    return buffer
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+________________________________
+
+
+
+
+
+
+
+transform.py
+
+
+
+
+
+
+# src/transform.py
+import pandas as pd
+import io
+import re
+
+def transform_data(input_buffer, file_name):
+    """
+    Apply a series of data cleansing and enrichment steps using Pandas.
+    Only CSV and Excel files are transformed – other file types are passed through unchanged.
+    The output is a new in-memory buffer ready for upload.
+    """
+    
+    # If it's not a CSV or Excel, we just return the raw buffer as-is
+    if not (file_name.endswith('.csv') or file_name.endswith('.xlsx')):
+        return input_buffer
+
+    # 1. Load data with fallback encoding (UTF-8 first, then Latin-1 for older files)
+    if file_name.endswith('.csv'):
+        try:
+            df = pd.read_csv(input_buffer, encoding='utf-8')
+        except UnicodeDecodeError:
+            input_buffer.seek(0)
+            df = pd.read_csv(input_buffer, encoding='latin1', sep=None, engine='python')
+    else:
+        df = pd.read_excel(input_buffer)
+
+    df = df.reset_index(drop=True)
+
+    # 2. Fix a common problem: columns shifted left when Billing Amount is empty or misaligned.
+    #    We check if the 'Billing Amount' cell is actually numeric; if not, we shift that row's
+    #    values one column to the right (effectively sliding everything back into place).
+    def fix_shift(row):
+        try:
+            float(str(row['Billing Amount']).replace(',', '.'))
+            return row
+        except ValueError:
+            cols = list(df.columns)
+            if 'Billing Amount' in cols:
+                idx_billing = cols.index('Billing Amount')
+                for i in range(idx_billing, len(cols) - 1):
+                    row[cols[i]] = row[cols[i+1]]
+                row[cols[-1]] = None
+            return row
+
+    if 'Billing Amount' in df.columns:
+        df = df.apply(fix_shift, axis=1)
+
+    # 3. Strip whitespace and remove special characters from all text columns.
+    #    This helps with consistency when we later do comparisons or groupings.
+    regex_clean = r'[^\w\s\-\+\,]'
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            df[col] = df[col].astype(str).str.strip()
+            df[col] = df[col].str.replace(regex_clean, '', regex=True)
+            df[col] = df[col].replace(['nan', 'None', '0.0', '0'], '')
+
+    # 4. Capitalize names properly (e.g., "john doe" -> "John Doe")
+    if 'Name' in df.columns:
+        df['Name'] = df['Name'].str.title()
+
+    # 5. Remove titles (Dr., Mr., etc.) from the Doctor column, then capitalize
+    if 'Doctor' in df.columns:
+        titles_regex = r'\b(Dr|Dr\.|Miss|MD|Mrs|Mr|PhD|Dra|Dra\.)\b'
+        df['Doctor'] = df['Doctor'].str.replace(titles_regex, '', regex=True, flags=re.IGNORECASE)
+        df['Doctor'] = df['Doctor'].str.strip().str.title()
+
+    # 6. Create a unique Record_ID by combining a row counter and the Year column
+    if 'Year' in df.columns:
+        df['Record_ID'] = [f"{i+1}_{year}" for i, year in enumerate(df['Year'])]
+        # Move Record_ID to the front for easier reading
+        cols = ['Record_ID'] + [c for c in df.columns if c != 'Record_ID']
+        df = df[cols]
+
+    # 7. Ensure numeric columns are actually numeric (clean commas/points, coerce errors)
+    if 'Billing Amount' in df.columns:
+        df['Billing Amount'] = df['Billing Amount'].astype(str).str.replace(',', '.', regex=False)
+        df['Billing Amount'] = pd.to_numeric(df['Billing Amount'], errors='coerce').fillna(0.0)
+    
+    if 'Age' in df.columns:
+        df['Age'] = pd.to_numeric(df['Age'], errors='coerce').fillna(0).astype(int)
+
+    # 8. Age Clustering – create a categorical column for age ranges
+    if 'Age' in df.columns:
+        age_limits = [-1, 18, 35, 50, 65, 150]
+        age_labels = [
+            '1. 0 to 18 (Ongrowing)', 
+            '2. 19 to 35 (Young Adult)', 
+            '3. 36 to 50 (Full grown)', 
+            '4. 51 to 65 (Mature)', 
+            '5. 66+ (Elder)'
+        ]
+        df['Health_Cluster'] = pd.cut(df['Age'], bins=age_limits, labels=age_labels)
+
+    # 9. Billing Clustering – tiered buckets for billing amounts
+    if 'Billing Amount' in df.columns:
+        billing_limits = [float('-inf'), -0.01, 10000, 20000, 30000, 40000, float('inf')]
+        billing_labels = [
+            '0. Cashback (< 0)',
+            '1. Up to 10k',
+            '2. 10k to 20k',
+            '3. 20k to 30k',
+            '4. 30k to 40k',
+            '5. Above 40k'
+        ]
+        df['Billing_Tier'] = pd.cut(df['Billing Amount'], bins=billing_limits, labels=billing_labels)
+
+    # 10. Date Processing – convert to datetime, extract weekday, compute length of stay
+    date_columns = ['Date of Admission', 'Discharge Date'] 
+    
+    # 10.1: Convert to actual datetime objects (coerce errors to NaT)
+    for col in date_columns:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=False)
+
+    # 10.2: Map day of week numbers to readable labels
+    if 'Date of Admission' in df.columns:
+        days_map = {
+            0: '1. Monday', 1: '2. Tuesday', 2: '3. Wednesday',
+            3: '4. Thursday', 4: '5. Friday', 5: '6. Saturday', 6: '7. Sunday'
+        }
+        df['Admission_Weekday'] = df['Date of Admission'].dt.dayofweek.map(days_map)
+
+    # 10.3: Calculate length of stay in days (difference between discharge and admission)
+    if 'Date of Admission' in df.columns and 'Discharge Date' in df.columns:
+        diff = (df['Discharge Date'] - df['Date of Admission']).dt.days
+        df['Length_of_Stay'] = pd.to_numeric(diff, errors='coerce').fillna(0).astype(int)
+
+    # 10.4: Format the original date columns back to YYYY-MM-DD strings (for consistency)
+    for col in date_columns:
+        if col in df.columns:
+            df[col] = df[col].dt.strftime('%Y-%m-%d')
+
+    # 11. Export the transformed DataFrame to a new buffer (CSV or Excel)
+    output_buffer = io.BytesIO()
+    if file_name.endswith('.csv'):
+        df.to_csv(output_buffer, index=False, encoding='utf-8', decimal='.')
+    else:
+        df.to_excel(output_buffer, index=False, engine='openpyxl')
+    
+    output_buffer.seek(0)
+    return output_buffer
+
+
+
+
+
+
+
+
+
+
+____________________________________
+
+
+
+
+
+
+
+
+
+
+
